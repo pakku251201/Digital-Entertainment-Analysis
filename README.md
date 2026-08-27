@@ -40,4 +40,4 @@ This project analyzes how digital entertainment consumption affects academic per
 3. Run / Render using Quarto
 
 ## 📌 Author
-Sachin J & Team
+Pratheek P Rao & Team
