@@ -1,0 +1,1215 @@
+---
+title: "Digital Entertainment Consumption Patterns and Their Impact on Academic Engagement and Lifestyle Balance Among University Students"
+subtitle: |
+  Advanced Methods in Data Analysis
+  Term Paper
+
+author:
+  - name: "Sachin"
+  - name: "Shriya"
+  - name: "Shravya"
+  - name: "Pratheek"
+  - name: "Vishwa"
+
+date: "`r Sys.Date()`"
+
+project:
+  output-dir: "C:/Users/SHRIYA/OneDrive/Desktop"
+  
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    theme: flatly
+    code-fold: true
+    code-tools: true
+    df-print: kable
+
+execute:
+  warning: false
+  message: false
+  echo: true
+---
+
+## Digital Entertainment Consumption Patterns and Their Impact on Academic Engagement and Lifestyle Balance Among University Students
+
+### SECTION 0 ▸ INSTALL & LOAD PACKAGES
+
+### Necessary Packages
+
+```{r}
+pkgs <- c(
+  "knitr", "tidyverse", "ggplot2", "ggcorrplot",
+  "factoextra", "cluster", "gridExtra", "janitor",
+  "scales", "car", "rlang"
+)
+
+invisible(lapply(pkgs, function(p) {
+  suppressPackageStartupMessages(library(p, character.only = TRUE))
+}))
+
+cat("All packages loaded successfully.\n")
+```
+
+# CHAPTER 1 ▸ INITIAL UNDERSTANDING
+
+```{r}
+# Load dataset from Excel
+# Load dataset (fix: correct function + clean path)
+library(readxl)
+raw_df <- read_excel("C:/Users/SHRIYA/OneDrive/Desktop/Row Dataxlsx.xlsx",sheet = "Form Responses 1")
+
+# Basic info
+cat("\nDataset Loaded!\n")
+cat("Rows:", nrow(raw_df), "| Columns:", ncol(raw_df), "\n")
+
+# Structure of data
+str(raw_df)
+
+# Summary statistics
+summary(raw_df)
+
+# First 5 rows
+head(raw_df, 5)
+
+# ---------------------------------------------------------
+# VARIABLE GUIDE (for understanding dataset)
+# ---------------------------------------------------------
+
+cat("\nVARIABLE GUIDE:\n")
+
+cat("
+DEMOGRAPHICS:
+- Timestamp → submission time
+- Name → remove later (privacy)
+- Age → numeric (check errors)
+- Gender → category
+- Current Year → may need cleaning
+- Field of Study → category
+
+SCREEN TIME:
+- Average Daily Screen Time → grouped hours
+
+PLATFORMS:
+- Platforms used → multiple selections
+
+SURVEY QUESTIONS (1–5 scale):
+- Q1–Q5   → binge watching
+- Q6–Q8   → short content
+- Q9–Q14  → gaming
+- Q15–Q18 → habits
+- Q19–Q25 → academics
+- Q26–Q30 → wellbeing
+- Q31–Q32 → balance
+")
+```
+
+# CHAPTER 2 ▸ DATA CLEANING.
+
+## 2.1 Clean column names
+
+```{r}
+df <- raw_df %>%
+  clean_names()
+cat("\n✅ Column names cleaned. New names:\n")
+print(names(df))
+head(df)
+```
+
+## 2.2 Rename columns to SHORT, meaningful names
+
+```{r}
+df <- df %>%
+  rename(
+    timestamp          = 1,
+    name               = 2,
+    age                = 3,
+    gender             = 4,
+    year_study         = 5,
+    field_study        = 6,
+    screen_time        = 7,
+    platforms          = 8,
+    # Binge-watching items
+    binge_watch        = 9,
+    stream_overrun     = 10,
+    relax_via_video    = 11,
+    # Short-form content
+    scroll_short       = 12,
+    scroll_overrun     = 13,
+    short_form_pref    = 14,
+    # Gaming items
+    game_regular       = 15,
+    game_overrun       = 16,
+    game_absorbed      = 17,
+    game_competitive   = 18,
+    game_improve       = 19,
+    game_major_hobby   = 20,
+    # General habits
+    boredom_check      = 21,
+    daily_routine      = 22,
+    presleep_content   = 23,
+    multitask_entertain= 24,
+    entertain_studying = 25,
+    easy_task_switch   = 26,
+    # Academic focus
+    focus_fully        = 27,
+    complete_on_time   = 28,
+    mentally_engaged   = 29,
+    acad_satisfied     = 30,
+    struggle_focus     = 31,
+    # Sleep & wellbeing
+    sleep_consistent   = 32,
+    latenight_sleep    = 33,
+    mental_fatigue     = 34,
+    feel_energized     = 35,
+    leisure_satisfied  = 36,
+    habit_interfere    = 37,
+    healthy_balance    = 38
+  )
+
+cat("\n✅ Columns renamed to short, clean labels.\n")
+
+head(df)
+```
+
+## 2.3 Fix messy data type
+
+```{r}
+# [A] Age — has one entry "26 Year " (text). Convert to numeric → becomes NA → impute.
+cat("\nUnique Age values before fix:\n")
+print(unique(df$age))
+
+df <- df %>%
+  mutate(age = as.numeric(trimws(age)))
+
+df <- df %>%
+  mutate(age = as.numeric(as.character(age)))
+
+cat("Rows with NA age after conversion:", sum(is.na(df$age)), "\n")
+# Impute NA with median age (robust to outliers)
+df <- df %>%
+  mutate(age = ifelse(is.na(age), median(age, na.rm = TRUE), age))
+
+# [B] Standardize Year of Study categories (messy: "House wife" vs "Housewife")
+cat("\nYear_study before fix:\n")
+print(table(df$year_study))
+
+df <- df %>%
+  mutate(year_study = case_when(
+    
+    grepl("House", year_study, ignore.case = TRUE) ~ "Housewife",
+    
+    grepl("Business|working|Refinement", year_study, ignore.case = TRUE) ~ "Business",
+    
+    grepl("Ph\\.D", year_study, ignore.case = TRUE) ~ "Ph.D Scholar",
+    
+    grepl("Postgrad|Masters", year_study, ignore.case = TRUE) ~ "Postgraduate student",
+    
+    grepl("Undergrad", year_study, ignore.case = TRUE) ~ "Undergraduate student",
+    
+    TRUE ~ year_study
+  ))
+
+cat("\nYear_study after fix:\n")
+print(table(df$year_study))
+
+# [C] Standardize Field of Study (collapse rare categories)
+df <- df %>%
+  mutate(field_study = case_when(
+    
+    grepl("Business|Commerce|Finance|Management|MBA", field_study, ignore.case = TRUE) 
+      ~ "Business/Commerce",
+    
+    grepl("Engineering|Tech|Computer|IT|ARCH", field_study, ignore.case = TRUE) 
+      ~ "Engineering/Tech",
+    
+    grepl("Science|Biology|Physics|Chemistry", field_study, ignore.case = TRUE) 
+      ~ "Science",
+    
+    grepl("Arts|Social|Psych|Crim|History|Political", field_study, ignore.case = TRUE) 
+      ~ "Arts/Social Sciences",
+    
+    TRUE ~ "Other"
+  ))
+
+cat("\nField of study after grouping:\n")
+print(table(df$field_study))
+
+```
+
+## 2.4 Check for duplicates
+
+```{r}
+# ── 2.4  Check for duplicates ─────────────────────────────────────────────────
+dup_count <- sum(duplicated(df %>% select(-timestamp, -name)))
+cat("\nDuplicate rows (ignoring name & timestamp):", dup_count, "\n")
+# No removal needed if 0
+
+```
+
+## 2.5 Screen time — convert to ORDERED FACTOR
+
+```{r}
+# ── 2.5  Screen time — convert to ORDERED FACTOR ──────────────────────────────
+# Ordered factor preserves the natural ranking of time bands
+screen_levels <- c("Less than 2 hours", "2–4 hours", "4–6 hours",
+                   "6–8 hours", "More than 8 hours")
+
+df <- df %>%
+  mutate(screen_time = factor(screen_time, levels = screen_levels, ordered = TRUE))
+
+cat("\nScreen time distribution:\n")
+print(table(df$screen_time))
+```
+
+## 2.6 Screen time — convert to ORDERED FACTOR
+
+```{r}
+#Likert encoding (text → numeric 1–5)
+likert_map <- c(
+  "Strongly Disagree" = 1,
+  "Disagree"          = 2,
+  "Neutral"           = 3,
+  "Agree"             = 4,
+  "Strongly Agree"    = 5
+)
+
+# Identify all Likert columns (everything except demographics & identifiers)
+likert_cols <- c(
+  "binge_watch", "stream_overrun", "relax_via_video",
+  "scroll_short", "scroll_overrun", "short_form_pref",
+  "game_regular", "game_overrun", "game_absorbed", "game_competitive",
+  "game_improve", "game_major_hobby",
+  "boredom_check", "daily_routine", "presleep_content",
+  "multitask_entertain", "entertain_studying", "easy_task_switch",
+  "focus_fully", "complete_on_time", "mentally_engaged", "acad_satisfied",
+  "struggle_focus",
+  "sleep_consistent", "latenight_sleep", "mental_fatigue",
+  "feel_energized", "leisure_satisfied", "habit_interfere", "healthy_balance"
+)
+
+df <- df %>%
+  mutate(across(
+    all_of(likert_cols),
+    ~ dplyr::recode(.,
+        "Strongly Disagree" = 1,
+        "Disagree" = 2,
+        "Neutral" = 3,
+        "Agree" = 4,
+        "Strongly Agree" = 5
+    )
+  ))
+
+cat("\n✅ Likert items encoded to numeric 1–5.\n")
+cat("Sample encoded values (binge_watch):\n")
+print(table(df$binge_watch))
+
+```
+
+## 2.7 Screen time — convert to ORDERED FACTOR
+
+```{r}
+# Method: IQR rule — cap values beyond Q1-1.5*IQR and Q3+1.5*IQR
+q1_age <- quantile(df$age, 0.25)
+q3_age <- quantile(df$age, 0.75)
+iqr_age <- q3_age - q1_age
+lower_age <- q1_age - 1.5 * iqr_age
+upper_age <- q3_age + 1.5 * iqr_age
+
+cat(sprintf("\nAge IQR bounds: [%.1f, %.1f]\n", lower_age, upper_age))
+cat("Ages outside bounds:", sum(df$age < lower_age | df$age > upper_age), "\n")
+
+# Winsorize (cap, don't remove) — we keep the respondent, just fix the extreme value
+df <- df %>%
+  mutate(age = pmin(pmax(age, lower_age), upper_age))
+```
+
+## 2.8 Drop non-analytical columns (Name and Time Stamp)
+
+```{r}
+df <- df %>%
+  select(-timestamp, -name)
+```
+
+```{r}
+head(df)
+```
+
+## 2.9 Final clean dataset check
+
+```{r}
+cat("\n📊 CLEAN DATASET SUMMARY:\n")
+cat("Rows:", nrow(df), "| Columns:", ncol(df), "\n")
+cat("Missing values:", sum(is.na(df)), "\n")
+glimpse(df)
+
+# Save cleaned dataset
+write.csv(df, "cleaned_entertainment_survey.csv", row.names = FALSE)
+cat("\n💾 Clean dataset saved as 'cleaned_entertainment_survey.csv'\n")
+ncol(df)
+```
+
+# CHAPTER 3 : FEATURE ENGINEERING
+
+```{r}
+#Goal: Create NEW, MEANINGFUL variables from existing ones.
+# Think of it like deriving new metrics from raw instrument readings.
+# Each new variable should answer a business/research question.
+
+df <- df %>%
+  mutate(
+
+    # ── FEATURE 1: Entertainment Addiction Score (EAS) ─────────────────────
+    # Business Reason: A composite index that measures how strongly a person
+    # exhibits addictive entertainment behaviors — binge-watching, infinite
+    # scrolling, and compulsive checking. Higher = more addictive pattern.
+    # Research Value: Core independent variable for predicting academic harm.
+    # Components: binge_watch + stream_overrun + scroll_overrun + boredom_check
+    entertainment_addiction_score = (binge_watch + stream_overrun +
+                                       scroll_overrun + boredom_check) / 4,
+
+    # ── FEATURE 2: Academic Performance Index (API) ────────────────────────
+    # Business Reason: Aggregates 5 academic effectiveness items into one
+    # score. struggle_focus is REVERSE-CODED (5→1, 4→2, etc.) because
+    # agreement with "I struggle to focus" = POOR academic outcome.
+    # This index is the KEY DEPENDENT VARIABLE of the study.
+    academic_performance_index = (focus_fully + complete_on_time +
+                                    mentally_engaged + acad_satisfied +
+                                    (6 - struggle_focus)) / 5,
+
+    # ── FEATURE 3: Wellbeing Score ─────────────────────────────────────────
+    # Business Reason: Captures sleep quality, mental fatigue, and energy.
+    # mental_fatigue and latenight_sleep and habit_interfere are reverse-coded
+    # (high agreement = bad outcome). Useful to study whether entertainment
+    # habits erode overall wellbeing beyond just academics.
+    wellbeing_score = (sleep_consistent + (6 - latenight_sleep) +
+                         (6 - mental_fatigue) + feel_energized +
+                         (6 - habit_interfere)) / 5,
+
+    # ── FEATURE 4: Gaming Intensity Score ─────────────────────────────────
+    # Business Reason: Games are a distinct entertainment mode (active vs.
+    # passive). By isolating gaming behavior, we can compare gamers vs.
+    # non-gamers on academic outcomes. Useful for sub-group analysis.
+    gaming_intensity = (game_regular + game_overrun + game_absorbed +
+                          game_competitive + game_improve + game_major_hobby) / 6,
+
+    # ── FEATURE 5: Screen Time Numeric ────────────────────────────────────
+    # Business Reason: The ordered factor is great for visualization, but
+    # regression and correlation need numeric values. We assign midpoints
+    # to each band for quantitative analysis.
+    screen_time_numeric = case_when(
+      screen_time == "Less than 2 hours" ~ 1,
+      screen_time == "2–4 hours"         ~ 3,
+      screen_time == "4–6 hours"         ~ 5,
+      screen_time == "6–8 hours"         ~ 7,
+      screen_time == "More than 8 hours" ~ 9
+    ),
+
+    # ── FEATURE 6: Platform Count ─────────────────────────────────────────
+    # Business Reason: Multi-platform users are more exposed to entertainment
+    # stimuli. Counts how many platforms each person uses from their response.
+    platform_count = str_count(platforms, ",") + 1,
+
+    # ── FEATURE 7: Entertainment Risk Category ────────────────────────────
+    # Business Reason: Stakeholder-friendly label that bins respondents into
+    # "Low Risk", "Moderate Risk", or "High Risk" based on EAS.
+    # This is actionable — counselors can target High Risk students.
+    risk_category = case_when(
+      entertainment_addiction_score <= 2.5 ~ "Low Risk",
+      entertainment_addiction_score <= 3.5 ~ "Moderate Risk",
+      TRUE                                 ~ "High Risk"
+    ),
+    risk_category = factor(risk_category,
+                           levels = c("Low Risk", "Moderate Risk", "High Risk"),
+                           ordered = TRUE)
+  )
+
+```
+#### Interpretation:
+
+The engineered features capture key behavioral patterns, revealing a relatively high Entertainment Addiction Score (mean ≈ 3.64), with a majority of respondents classified as High Risk, indicating prevalent addictive usage. Academic performance remains moderate (mean ≈ 3.12), suggesting potential adverse effects of excessive entertainment engagement. Wellbeing is comparatively lower (mean ≈ 2.79), reflecting issues related to sleep and energy levels. Gaming intensity is moderate (mean ≈ 2.98), indicating it contributes to overall behavior but is not the dominant factor. Overall, the findings suggest that higher entertainment usage is associated with average academic outcomes and reduced wellbeing.
+
+
+# CHAPTER 4 ▸ EXPLORATORY DATA ANALYSIS (EDA)
+
+### Color palette (professional, accessible)
+
+```{r}
+pal_main   <- c("#2E4057", "#048A81", "#54C6EB", "#EF8354", "#F7B2AD")
+pal_risk   <- c("Low Risk" = "#048A81", "Moderate Risk" = "#EF8354",
+                "High Risk" = "#C0392B")
+pal_gender <- c("Male" = "#2E4057", "Female" = "#EF8354")
+```
+
+## 4.1 UNIVARIATE ANALYSIS — Who are the respondents:
+
+### \[Plot 1\] Age Distribution:
+
+```{r}
+p_age <- ggplot(df, aes(x = age)) +
+  geom_histogram(bins = 20, fill = "#2E4057", color = "white", alpha = 0.85) +
+  geom_vline(xintercept = mean(df$age), color = "#EF8354",
+             linetype = "dashed", linewidth = 1) +
+  annotate("text", x = mean(df$age) + 1.5, y = 15,
+           label = paste0("Mean = ", round(mean(df$age), 1)),
+           color = "#EF8354", size = 3.5, fontface = "bold") +
+  labs(title = "Age Distribution of Survey Respondents",
+       subtitle = "Majority are young adults (18–27), reflecting a student-heavy sample",
+       x = "Age (years)", y = "Count") +
+  theme_minimal(base_size = 12)
+
+print(p_age)
+```
+#### Interpretation:
+
+The age distribution shows that the sample is heavily concentrated among young adults, primarily between 18 and 27 years, with a mean age of approximately 22.8 years. The histogram indicates a fairly clustered distribution around the early twenties, suggesting limited age variability. This reflects a student-dominated respondent group, which is consistent with the context of the study. The concentration in this age range makes the findings more representative of young adult behavior rather than a general population.
+
+
+### \[Plot 2\] Screen Time Distribution (Bar)
+
+```{r}
+p_screen <- ggplot(df, aes(x = screen_time, fill = screen_time)) +
+  
+  geom_bar(color = "white", show.legend = FALSE) +
+  
+  # ✅ Data labels (count + %)
+  geom_text(stat = "count",
+            aes(label = paste0(..count.., "\n(", 
+                               round(..count../sum(..count..)*100), "%)")),
+            vjust = -0.3,
+            size = 2.5,
+            fontface = "bold") +
+  
+  scale_fill_manual(values = pal_main) +
+  
+  labs(title = "Daily Screen Time Distribution",
+       subtitle = "Most respondents spend 4–8 hours daily on digital entertainment",
+       x = "Screen Time Band", y = "Count") +
+  
+  theme_minimal(base_size = 10) +
+  theme(axis.text.x = element_text(angle = 15, hjust = 0.7))
+
+print(p_screen)
+```
+#### Interpretation:
+
+The screen time distribution shows that most respondents spend between 4–8 hours daily on digital entertainment, with the highest concentration in the 4–6 hours category. A substantial number also fall in the 6–8 hours range, indicating generally high screen exposure. Fewer respondents report low usage (less than 2 hours), while a notable portion exceeds 8 hours, suggesting heavy usage among some individuals. Overall, the pattern reflects a predominantly high screen-time behavior in the sample. Overall we see that 38% of people use electronic devices for 4-6 Hours. 
+
+
+### \[Plot 3\] EAS Distribution
+
+```{r}
+p_eas <- ggplot(df, aes(x = entertainment_addiction_score)) +
+  geom_histogram(aes(y = ..density..), bins = 15,
+                 fill = "#048A81", color = "white", alpha = 0.8) +
+  geom_density(color = "#EF8354", linewidth = 1.2) +
+  labs(title = "Entertainment Addiction Score (EAS) Distribution",
+       subtitle = "Slightly right-skewed — moderate addiction is most common",
+       x = "EAS (1 = Low, 5 = High)", y = "Density") +
+  theme_minimal(base_size = 12)
+
+print(p_eas)
+```
+
+#### Interpretation:
+
+The distribution of the Entertainment Addiction Score (EAS) is slightly right-skewed, indicating that most respondents fall in the moderate to high addiction range. The peak around scores of 3 to 4 suggests that moderate addiction behavior is the most common. A smaller number of respondents show very low addiction, while some extend toward high scores close to 5. This pattern highlights that addictive entertainment habits are prevalent, with fewer individuals at the lower end.
+
+
+### \[Plot 4\] Risk Category Pie/Bar
+
+```{r}
+p_risk <- ggplot(df, aes(x = risk_category, fill = risk_category)) +
+  geom_bar(color = "white", show.legend = FALSE) +
+  scale_fill_manual(values = pal_risk) +
+  geom_text(stat = "count",
+            aes(label = paste0(..count.., "\n(", round(..count../nrow(df)*100), "%)")),
+            vjust = -0.3, size = 3, fontface = "bold") +
+  labs(title = "Respondents by Entertainment Risk Category",
+       x = "Risk Category", y = "Count") +
+  theme_minimal(base_size = 12)
+
+print(p_risk)
+```
+#### Interpretation:
+
+The distribution shows that a majority of respondents fall into the High Risk category (59%), indicating widespread high levels of entertainment addiction. A smaller but notable proportion are in the Moderate Risk group (31%), suggesting moderate behavioral patterns. Very few respondents are classified as Low Risk (9%), highlighting that minimal addiction is uncommon in this sample. Overall, the results suggest a strong skew toward higher risk levels, reinforcing the prevalence of addictive entertainment usage.
+
+
+## 4.2 BIVARIATE ANALYSIS — How do variables relate?
+
+### \[Plot 5\] EAS vs Academic Performance Index (KEY relationship)
+
+```{r}
+p_eas_api <- ggplot(df, aes(x = entertainment_addiction_score,
+                             y = academic_performance_index,
+                             color = gender)) +
+  geom_point(alpha = 0.6, size = 2.5) +
+  geom_smooth(method = "lm", se = TRUE, linetype = "solid", linewidth = 1) +
+  scale_color_manual(values = pal_gender) +
+  labs(title = "Entertainment Addiction vs Academic Performance",
+       subtitle = "Negative relationship: higher addiction → lower academic performance",
+       x = "Entertainment Addiction Score (EAS)",
+       y = "Academic Performance Index (API)",
+       color = "Gender") +
+  theme_minimal(base_size = 12)
+
+print(p_eas_api)
+```
+#### Interpretation:
+
+The plot shows a clear negative relationship between Entertainment Addiction Score (EAS) and Academic Performance Index (API), indicating that higher addiction is associated with lower academic performance. The downward trend is consistent across both genders, though slight variations exist in individual data points. Most respondents with high EAS scores tend to have API values clustered on the lower side. This suggests that increased engagement in entertainment activities may adversely impact academic outcomes.
+
+
+### \[Plot 6\] Screen Time vs API (Boxplot)
+
+```{r}
+# [Plot 6] Screen Time vs API (Boxplot)
+p_screen_api <- ggplot(df, aes(x = screen_time, y = academic_performance_index,
+                              fill = screen_time)) +
+  
+  geom_boxplot(color = "#333333", alpha = 0.8,
+               outlier.color = "#C0392B", outlier.size = 2) +
+  
+  # ✅ Mean point
+  stat_summary(fun = mean, geom = "point",
+               shape = 21, size = 3,
+               fill = "white", color = "#333333", stroke = 1) +
+  
+  # ✅ Mean labels (positioned ABOVE boxes properly)
+  stat_summary(fun = mean, geom = "text",
+               aes(label = round(..y.., 2)),
+               vjust = -1.2,   # push above
+               size = 3.2,
+               fontface = "bold",
+               color = "#2C3E50") +
+  
+  scale_fill_manual(values = pal_main, name = "Screen Time") +
+  
+  labs(title = "Screen Time vs Academic Performance Index",
+       subtitle = "Academic performance declines as screen time increases beyond 4 hours",
+       x = "Daily Screen Time", 
+       y = "Academic Performance Index (API)") +
+  
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 15, hjust = 1),
+        legend.position = "right") +   # ✅ show legend
+  
+  # ✅ Add extra space so labels don't get cut
+  coord_cartesian(ylim = c(min(df$academic_performance_index),
+                           max(df$academic_performance_index) + 0.5))
+
+print(p_screen_api)
+```
+#### Interpretation:
+
+The boxplot shows that academic performance (API) tends to decline as screen time increases, particularly beyond 4 hours per day. Respondents with lower screen time (less than 2–4 hours) have relatively higher and more consistent API scores. As screen time rises to 6–8 hours and above, the median API decreases and variability increases, indicating less stable performance. The lowest scores are more common in the “More than 8 hours” group. Overall, higher screen time is associated with reduced academic performance.
+
+
+### \[Plot 7\] EAS vs Wellbeing Score by Gender
+
+```{r}
+p_wellbeing <- ggplot(df, aes(x = entertainment_addiction_score,
+                               y = wellbeing_score, color = gender)) +
+  geom_point(alpha = 0.5, size = 2) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 1.5) +
+  scale_color_manual(values = pal_gender) +
+  labs(title = "Entertainment Addiction vs Wellbeing Score by Gender",
+       subtitle = "Higher addiction correlates with worse wellbeing — trend stronger in males",
+       x = "EAS", y = "Wellbeing Score", color = "Gender") +
+  theme_minimal(base_size = 12)
+
+print(p_wellbeing)
+```
+#### Interpretation:
+
+The plot shows a negative relationship between Entertainment Addiction Score (EAS) and Wellbeing Score, indicating that higher addiction is associated with poorer wellbeing. As EAS increases, wellbeing scores consistently decline across respondents. This trend is observed for both genders, but appears slightly stronger among males based on the steeper slope. The spread of points suggests some variability, but the overall pattern remains clear. Overall, increased entertainment addiction is linked to reduced wellbeing.
+
+
+### \[Plot 8\] Gaming Intensity by Year of Study
+
+```{r}
+p_gaming <- ggplot(df, aes(x = reorder(year_study, gaming_intensity,
+                                        FUN = median),
+                            y = gaming_intensity, fill = year_study)) +
+  geom_boxplot(show.legend = FALSE, color = "#333333", alpha = 0.85) +
+  coord_flip() +
+  scale_fill_manual(values = colorRampPalette(pal_main)(length(unique(df$year_study)))) +
+  labs(title = "Gaming Intensity by Year of Study/Occupation",
+       subtitle = "Undergraduates and PhD scholars show the highest gaming intensity",
+       x = "Year of Study", y = "Gaming Intensity Score") +
+  theme_minimal(base_size = 12)
+
+print(p_gaming)
+```
+#### Interpretation:
+
+The boxplot shows that gaming intensity varies across different study/occupation groups, with undergraduate students and PhD scholars exhibiting relatively higher median scores. Postgraduate students show moderate gaming levels, while housewives also display moderately high but slightly varied intensity. In contrast, individuals in business roles have the lowest gaming intensity with minimal variation. The spread of values indicates greater variability among student groups compared to non-student categories. Overall, gaming behavior appears more prominent among academic populations.
+
+
+## 4.3 MULTIVARIATE ANALYSIS — Grouped comparisons & faceting
+
+### \[Plot 9\] API faceted by Field of Study and Risk Category
+
+```{r}
+p_facet <- ggplot(df, aes(x = risk_category, 
+                          y = academic_performance_index, 
+                          fill = risk_category)) +
+  
+  # Boxplot
+  geom_boxplot(alpha = 0.7, outlier.color = "red") +
+  
+  # Mean point
+  stat_summary(fun = mean, geom = "point", 
+               color = "black", size = 2) +
+  
+  # ✅ Mean labels (added)
+  stat_summary(fun = mean, geom = "text",
+               aes(label = round(..y.., 2)),
+               vjust = -1.2,
+               size = 3,
+               fontface = "bold",
+               color = "black") +
+  
+  # Facet
+  facet_wrap(~ field_study, ncol = 2) +
+  
+  # Colors
+  scale_fill_manual(values = c(
+    "Low Risk" = "#4CAF50",
+    "Moderate Risk" = "#FFC107",
+    "High Risk" = "#F44336"
+  )) +
+  
+  # Labels
+  labs(
+    title = "Academic Performance vs Risk Level",
+    x = "Risk Category",
+    y = "Academic Performance Index"
+  ) +
+  
+  # Theme
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 0),
+    legend.position = "none"
+  ) +
+  
+  # ✅ Prevent label cutoff
+  coord_cartesian(ylim = c(min(df$academic_performance_index),
+                           max(df$academic_performance_index) + 0.5))
+
+print(p_facet)
+```
+#### Interpretation:
+
+The faceted plots show that academic performance generally declines as risk level increases across most fields of study. Students in the Low Risk category consistently have higher API scores, while Moderate and High Risk groups show lower and more variable performance. This trend is especially clear in Science and Engineering/Tech, where the drop from low to high risk is more pronounced. In Business/Commerce and Arts, the decline is present but slightly less consistent. Overall, higher entertainment risk is associated with poorer academic outcomes across disciplines.
+
+
+### \[Plot 10\] Stacked bar: Screen time composition within risk groups
+
+```{r}
+p_stack <- df %>%
+  group_by(risk_category, screen_time) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(risk_category) %>%
+  mutate(pct = n / sum(n)) %>%
+  ggplot(aes(x = risk_category, y = pct, fill = screen_time)) +
+  
+  geom_bar(stat = "identity", position = "stack", color = "white") +
+  
+  scale_fill_manual(values = pal_main) +
+  
+  scale_y_continuous(labels = scales::percent) +
+  
+  labs(
+    title = "Screen Time Composition within Risk Categories",
+    subtitle = "High-risk users are mostly in the 6h+ screen time bands",
+    x = "Risk Category",
+    y = "Proportion",
+    fill = "Screen Time"
+  ) +
+  
+  theme_minimal(base_size = 12)
+
+print(p_stack)
+```
+#### Interpretation:
+
+The stacked bar chart shows that higher risk categories are associated with greater proportions of users in the higher screen time bands. High Risk individuals are predominantly concentrated in the 6–8 hours and more than 8 hours categories, indicating heavy screen usage. In contrast, Low Risk respondents are more represented in the lower screen time ranges, especially 2–4 hours. Moderate Risk users display a more balanced distribution across categories. Overall, increased screen time is clearly linked to higher entertainment addiction risk levels.
+
+
+## 4.4 CORRELATION HEATMAP
+
+### Select numeric columns only for correlation
+
+```{r}
+# Select numeric columns only for correlation
+numeric_vars <- df %>%
+  select(age, screen_time_numeric, platform_count,
+         entertainment_addiction_score, academic_performance_index,
+         wellbeing_score, gaming_intensity,
+         binge_watch, presleep_content, latenight_sleep, mental_fatigue,
+         focus_fully, struggle_focus, sleep_consistent, feel_energized)
+
+cor_matrix <- cor(numeric_vars, use = "complete.obs")
+
+p_heatmap <- ggcorrplot(cor_matrix,
+                         method    = "square",
+                         type      = "lower",
+                         lab       = TRUE,
+                         lab_size  = 2.5,
+                         colors    = c("#C0392B", "white", "#048A81"),
+                         title     = "Correlation Heatmap — Key Variables",
+                         ggtheme   = theme_minimal(base_size = 10))
+
+print(p_heatmap)
+cat("\n📊 Correlation heatmap printed.\n")
+
+```
+#### Interpretation:
+
+The correlation heatmap shows that entertainment addiction score is moderately negatively correlated with both academic performance and wellbeing, indicating that higher addiction is associated with poorer outcomes in both areas. Screen time and platform count show positive correlations with addiction, suggesting increased exposure leads to higher addictive behavior. Wellbeing is positively related to good habits like consistent sleep and feeling energized, while negatively linked to mental fatigue and late-night usage. Academic performance also shows positive association with focus-related variables and negative with distraction indicators. Overall, the relationships highlight that increased entertainment usage is linked to lower academic performance and reduced wellbeing.
+
+
+# CHAPTER 5 ▸ ADVANCED MULTIVARIATE DATA ANALYSIS (AMDA)
+
+### ── Prepare numeric matrix for multivariate methods :
+
+```{r}
+likert_matrix <- df %>%
+  select(all_of(likert_cols)) %>%
+  scale()  # Z-score standardize (mean=0, sd=1) — required for PCA & clustering
+```
+
+## 5.1 PRINCIPAL COMPONENT ANALYSIS (PCA)
+
+```{r}
+pca_result <- prcomp(likert_matrix, scale. = FALSE)  # already scaled
+
+# How much variance does each PC explain?
+cat("\n🔬 PCA RESULTS:\n")
+pca_var   <- pca_result$sdev^2
+pca_pct   <- pca_var / sum(pca_var) * 100
+pca_cumul <- cumsum(pca_pct)
+
+pca_summary <- data.frame(
+  PC           = paste0("PC", 1:10),
+  Variance_Pct = round(pca_pct[1:10], 2),
+  Cumulative   = round(pca_cumul[1:10], 2)
+)
+print(kable(pca_summary, caption = "PCA Variance Explained (first 10 PCs)"))
+
+cat(sprintf("\n  → PC1 + PC2 explain %.1f%% of total variance\n",
+            pca_cumul[2]))
+cat(sprintf("  → First 4 PCs together explain %.1f%% of total variance\n",
+            pca_cumul[4]))
+```
+#### Interpretation:
+
+The PCA results show that the first principal component (PC1) explains the largest share of variance (26.18%), followed by PC2 (13.62%), together accounting for 39.8% of the total variability in the data. This indicates that a significant portion of the underlying patterns can be captured using just two dimensions. The first four components explain 54.2% of the variance, suggesting moderate dimensionality reduction while retaining key information. Beyond PC4, each component contributes relatively smaller variance, indicating diminishing importance. Overall, PCA effectively reduces complexity while preserving the main structure of the dataset.
+
+
+### \[Plot 11\] Scree plot
+
+```{r}
+library(factoextra)
+library(rlang)
+
+fviz_eig(pca_result,
+         addlabels = TRUE,
+         ylim      = c(0, 40),
+         barfill   = "#2E4057",
+         barcolor  = "white",
+         linecolor = "#EF8354") +
+  labs(title = "PCA Scree Plot — Variance Explained per Component",
+       subtitle = "Elbow at PC4 suggests 4 meaningful dimensions in the data")
+```
+#### Interpretation:
+
+The scree plot shows that variance explained drops sharply from PC1 to PC4, after which the decline becomes gradual, forming an elbow at PC4. This indicates that the first four principal components capture the most meaningful structure in the data, while additional components contribute relatively little. PC1 and PC2 explain the largest portions, with diminishing returns from subsequent components. The flattening of the curve beyond PC4 suggests limited added value in retaining more dimensions. Overall, the plot supports selecting four components for efficient dimensionality reduction.
+
+
+### \[Plot 12\] Biplot — individuals + variables in PC1 vs PC2 space
+
+```{r}
+fviz_pca_biplot(pca_result,
+                geom.ind     = "point",
+                col.ind      = df$risk_category,
+                palette      = unname(pal_risk),
+                addEllipses  = TRUE,
+                col.var      = "#333333",
+                repel        = TRUE,
+                label        = "var",
+                title        = "PCA Biplot: Respondents Colored by Risk Category",
+                legend.title = "Risk Category")
+```
+#### Interpretation:
+
+The PCA biplot shows a clear separation of respondents based on risk categories, with High Risk individuals clustering toward variables related to addictive behaviors (e.g., binge watching, scrolling, gaming). In contrast, Low Risk respondents are positioned closer to positive outcomes like focus, timely completion, and feeling energized. Moderate Risk individuals lie between these two extremes, indicating transitional behavior. The direction of variable arrows suggests that addictive habits are negatively associated with academic and wellbeing factors. Overall, the plot highlights distinct behavioral patterns across risk groups.
+
+
+### Top loadings on PC1 (the most important dimension)
+
+```{r}
+cat("\nTop 10 variable loadings on PC1 (largest absolute values):\n")
+pc1_loadings <- sort(abs(pca_result$rotation[, 1]), decreasing = TRUE)
+print(round(pc1_loadings[1:10], 3))
+
+
+```
+#### Interpretation: 
+
+ BUSINESS INTERPRETATION — PCA:
+  PC1 captures general 'digital entertainment immersion' — items about
+  binge-watching, scrolling, gaming, and boredom-driven usage load together.
+  PC2 likely captures 'academic self-regulation' vs. 'entertainment escapism'.
+  High-risk respondents cluster distinctly from low-risk in PC space,
+  confirming that entertainment behavior forms coherent behavioral profiles.
+
+## 5.2 K-MEANS CLUSTERING
+
+```{r}
+# WHY: PCA shows structure exists — clustering NAMES it.
+# We find natural respondent groups (personas) based on all 30 items.
+# Business Value: Each cluster = a student persona → targeted intervention.
+# =============================================================================
+
+# Step 1: Find optimal k using silhouette method
+set.seed(42)  # Always set seed for reproducibility!
+
+cat("\n🔬 CLUSTERING — Finding optimal k...\n")
+
+fviz_nbclust(likert_matrix, kmeans,
+             method = "silhouette",
+             k.max  = 8) +
+  labs(title = "Optimal Number of Clusters (Silhouette Method)",
+       subtitle = "Higher silhouette width = more distinct clusters")
+
+# Step 2: Run k-means (k=3 is typically optimal for attitudinal survey data)
+# Adjust k based on your silhouette plot output!
+k_opt <- 3
+
+kmeans_result <- kmeans(likert_matrix,
+                         centers  = k_opt,
+                         nstart   = 25,  # 25 random starts → pick best
+                         iter.max = 100)
+
+df$cluster <- as.factor(kmeans_result$cluster)
+
+cat(sprintf("\nk-means converged with k=%d clusters.\n", k_opt))
+cat("Cluster sizes:\n")
+print(table(df$cluster))
+```
+#### Interpretation:
+
+The silhouette plot shows that the highest average silhouette width occurs at k = 2, indicating that two clusters provide the most distinct and well-separated grouping in the data. After k = 2, the silhouette scores decline and stabilize, suggesting weaker separation with additional clusters. Although k = 3 is chosen for deeper segmentation, it introduces slightly less distinct clusters compared to k = 2. This implies a trade-off between simplicity (k = 2) and richer segmentation (k = 3). Overall, the data naturally forms two strong clusters, with a third providing additional but less clear differentiation.
+
+
+### \[Plot 13\] Cluster visualization on PCA space
+
+```{r}
+library(factoextra)
+library(ggplot2)
+
+p_cluster <- fviz_cluster(
+  kmeans_result,
+  data = likert_matrix,
+
+  # Clean points
+  geom = "point",
+  pointsize = 2.5,
+  alpha = 0.75,
+
+  # Professional palette
+  palette = c("#2C3E50", "#18A999", "#F39C12"),
+
+  # REMOVE CLUTTER
+  ellipse = FALSE,     # ❌ no convex hulls
+  repel   = FALSE,     # ❌ no labels
+
+  ggtheme = theme_minimal()
+) +
+
+  # Clear business framing
+  labs(
+    title = "Customer Segmentation Based on Response Patterns",
+    subtitle = "Clusters derived from PCA-reduced survey data",
+    x = "Principal Component 1",
+    y = "Principal Component 2",
+    color = "Segment"
+  ) +
+
+  # Professional polish
+  theme(
+    plot.title = element_text(face = "bold"),
+    plot.subtitle = element_text(color = "gray40"),
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  )
+
+print(p_cluster)
+```
+#### Interpretation:
+
+The clustering plot shows three distinct respondent segments based on their response patterns in the PCA-reduced space. Cluster 1 is clearly separated on the positive side of PC1, indicating a unique behavioral profile compared to others. Cluster 2 is centrally located, suggesting moderate or balanced response patterns. Cluster 3 is positioned on the negative side of PC1, reflecting a contrasting set of behaviors. Overall, the clusters are reasonably well-separated, supporting meaningful segmentation of respondents into distinct groups.
+
+
+### Cluster Profiling
+
+```{r}
+# Step 3: Profile each cluster (who is in each cluster?)
+cluster_profile <- df %>%
+  group_by(cluster) %>%
+  summarise(
+    n                 = n(),
+    avg_age           = round(mean(age), 1),
+    pct_high_risk     = round(mean(risk_category == "High Risk") * 100, 1),
+    avg_screen_hrs    = round(mean(screen_time_numeric), 1),
+    avg_eas           = round(mean(entertainment_addiction_score), 2),
+    avg_api           = round(mean(academic_performance_index), 2),
+    avg_wellbeing     = round(mean(wellbeing_score), 2),
+    avg_gaming        = round(mean(gaming_intensity), 2),
+    .groups = "drop"
+  )
+
+cat("\n📋 CLUSTER PROFILES:\n")
+print(kable(cluster_profile, caption = "K-Means Cluster Profiles"))
+
+```
+
+#### Interpretation:
+
+The cluster profiles reveal three distinct respondent segments with clear behavioral differences. Cluster 1 represents low-risk individuals with the lowest addiction (EAS ≈ 2.38), lower screen time, highest academic performance (API ≈ 3.73), and better wellbeing. Cluster 2 shows moderate patterns, with average addiction (EAS ≈ 3.60), moderate screen time, and slightly lower academic and wellbeing scores. Cluster 3 is the high-risk group, characterized by the highest addiction (EAS ≈ 4.10), highest screen time, lowest academic performance (API ≈ 2.96), poorest wellbeing, and highest gaming intensity. Overall, the clusters clearly differentiate low, moderate, and high-risk behavioral profiles.
+
+
+## 5.3 MULTIPLE LINEAR REGRESSION
+
+```{r}
+# WHY: We now quantify HOW MUCH each entertainment factor hurts academics.
+# This converts correlation into a predictive model with statistical significance.
+# Think of it as: "If screen time goes up by 1 hour, API drops by X points."
+# =============================================================================
+
+cat("\n🔬 REGRESSION ANALYSIS:\n")
+
+# Model 1: Base model — EAS and screen time predicting API
+model1 <- lm(academic_performance_index ~
+               entertainment_addiction_score + screen_time_numeric,
+             data = df)
+
+cat("\nModel 1 — Base (EAS + Screen Time):\n")
+print(summary(model1))
+
+# Model 2: Full model — add demographics and gaming
+model2 <- lm(academic_performance_index ~
+               entertainment_addiction_score +
+               screen_time_numeric +
+               gaming_intensity +
+               wellbeing_score +
+               age +
+               gender +
+               field_study,
+             data = df)
+
+cat("\nModel 2 — Full Model:\n")
+print(summary(model2))
+
+# Extract key metrics
+r2_m1 <- summary(model1)$r.squared
+r2_m2 <- summary(model2)$r.squared
+cat(sprintf("\nModel 1 R²: %.3f (explains %.1f%% of API variance)\n",
+            r2_m1, r2_m1 * 100))
+cat(sprintf("Model 2 R²: %.3f (explains %.1f%% of API variance)\n",
+            r2_m2, r2_m2 * 100))
+```
+#### Interpretation 
+
+The regression results show that in Model 1, entertainment addiction has a significant negative impact on academic performance, while screen time is not a significant predictor, explaining only 7.5% of the variance. In Model 2, the overall explanatory power improves (R² = 20.3%), but entertainment addiction and screen time lose significance after adding other variables. Wellbeing score emerges as a strong positive and significant predictor of academic performance. Other factors like gaming, age, and field of study are not significant, while gender shows a weak effect. Overall, wellbeing plays a more critical role in predicting academic outcomes than direct entertainment usage.
+
+### \[Plot 14\] Coefficient plot for Model 2
+
+```{r}
+coef_df <- as.data.frame(summary(model2)$coefficients)
+coef_df$variable <- rownames(coef_df)
+coef_df <- coef_df %>%
+  filter(variable != "(Intercept)") %>%
+  mutate(
+    significant = `Pr(>|t|)` < 0.05,
+    ci_lower    = Estimate - 1.96 * `Std. Error`,
+    ci_upper    = Estimate + 1.96 * `Std. Error`
+  )
+
+ggplot(coef_df, aes(x = Estimate, y = reorder(variable, Estimate),
+                    color = significant)) +
+  geom_point(size = 3) +
+ geom_errorbar(aes(xmin = ci_lower, xmax = ci_upper), width = 0.2,
+              orientation = "y") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+  scale_color_manual(values = c("FALSE" = "grey70", "TRUE" = "#C0392B"),
+                     labels = c("Not Significant (p≥0.05)", "Significant (p<0.05)")) +
+  labs(title = "Regression Coefficients: Predictors of Academic Performance Index",
+       subtitle = "Red = statistically significant. Error bars = 95% CI",
+       x = "Coefficient Estimate", y = "Predictor Variable",
+       color = "Significance") +
+  theme_minimal(base_size = 11)
+
+```
+#### Interpretation:
+
+The coefficient plot shows that wellbeing score is the only statistically significant predictor of academic performance, with a strong positive effect. All other variables, including entertainment addiction, screen time, gaming intensity, age, and field of study, are not significant as their confidence intervals cross zero. Gender shows a slight positive effect but remains marginally insignificant. The visual clearly highlights that wellbeing has the most reliable and meaningful impact on academic outcomes. Overall, academic performance is primarily driven by wellbeing rather than direct entertainment behaviors.
+
+
+## 5.4 ONE-WAY ANOVA — Does risk category SIGNIFICANTLY affect API?
+
+```{r}
+# WHY: We want to statistically prove (not just visually suggest) that the
+# 3 risk groups have meaningfully different academic outcomes.
+# ANOVA tests: "Is the mean API the same across all risk categories?"
+# If p < 0.05, it is NOT the same — there's a real difference.
+# =============================================================================
+
+cat("\n🔬 ONE-WAY ANOVA:\n")
+cat("H₀: Mean API is equal across Low, Moderate, and High Risk groups\n")
+cat("H₁: At least one group mean is significantly different\n\n")
+
+anova_model <- aov(academic_performance_index ~ risk_category, data = df)
+print(summary(anova_model))
+
+# If ANOVA is significant, run Tukey HSD to find WHICH pairs differ
+tukey_result <- TukeyHSD(anova_model)
+cat("\nTukey HSD Post-Hoc Test (which pairs are different?):\n")
+print(tukey_result)
+
+```
+#### Interpretation:
+
+The ANOVA results show a statistically significant difference in academic performance across risk categories (p = 0.005), indicating that at least one group differs in mean API. The Tukey post-hoc test reveals that both Moderate Risk and High Risk groups have significantly lower academic performance compared to the Low Risk group. However, there is no significant difference between Moderate and High Risk groups. This suggests that moving from low to higher risk levels is associated with a decline in academic performance, but differences within higher risk groups are minimal.
+
+
+#### \[Plot 15\] ANOVA result visualization
+
+```{r}
+p_anova <- ggplot(df, aes(x = risk_category, y = academic_performance_index,
+                          fill = risk_category)) +
+
+  geom_boxplot(width = 0.55,
+               color = "#2C3E50",
+               outlier.color = "#E74C3C",
+               outlier.size = 2,
+               alpha = 0.85,
+               show.legend = FALSE) +
+
+  # Mean point
+  stat_summary(fun = mean,
+               geom = "point",
+               shape = 21,
+               size = 3,
+               fill = "white",
+               color = "#2C3E50",
+               stroke = 1.2) +
+
+  # ✅ FIXED labels
+  stat_summary(fun = mean,
+               geom = "text",
+               aes(label = round(after_stat(y), 2)),
+               vjust = -1.2,   # push above
+               size = 3.5,
+               fontface = "bold",
+               color = "#2C3E50") +
+
+  scale_fill_manual(values = pal_risk) +
+
+  labs(
+    title = "Academic Performance by Risk Category",
+    subtitle = "Box = distribution | White dot = average",
+    x = NULL,
+    y = "Performance Index"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    plot.subtitle = element_text(color = "gray40"),
+    axis.text.x = element_text(face = "bold"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank()
+  ) +
+
+  coord_cartesian(ylim = c(min(df$academic_performance_index),
+                           max(df$academic_performance_index) + 0.4))
+
+print(p_anova)
+```
+#### Interpretation:
+
+The boxplot shows that Low Risk respondents have the highest average academic performance, while both Moderate and High Risk groups have lower mean API scores. The decline from Low to higher risk levels is clearly visible, supporting the ANOVA results. Moderate and High Risk groups show similar central tendencies, with overlapping distributions. Greater variability is observed in the High Risk group, indicating inconsistent performance. Overall, higher risk levels are associated with lower academic performance.
+
+
+### Levene's test (homogeneity of variance — ANOVA assumption check)
+
+```{r}
+cat("\nLevene's Test (equal variance assumption):\n")
+print(leveneTest(academic_performance_index ~ risk_category, data = df))
+```
+#### Interpretation:
+
+Levene’s test shows that the assumption of equal variances is satisfied (p = 0.7048 > 0.05), indicating no significant difference in variance across the risk groups. This means the variability in academic performance is similar for Low, Moderate, and High Risk categories. As a result, the homogeneity of variance assumption required for ANOVA is met. Therefore, the ANOVA results can be considered reliable and valid.
+
+
+
+# CHAPTER 6 : Final Output
+
+```{r}
+library(tidyverse)
+cat("\n📊 FINAL DATASET PREVIEW:\n")
+df %>%
+  select(age, gender, year_study, field_study, screen_time,
+         entertainment_addiction_score, academic_performance_index,
+         wellbeing_score, gaming_intensity, risk_category, cluster) %>%
+  head(10) %>%
+  kable(caption = "Preview of Final Enriched Dataset (first 10 rows)") %>%
+  print()
+
+cat("\n📈 KEY STATISTICS SUMMARY:\n")
+df %>%
+  group_by(risk_category) %>%
+  summarise(
+    n           = n(),
+    mean_EAS    = round(mean(entertainment_addiction_score), 2),
+    mean_API    = round(mean(academic_performance_index), 2),
+    mean_sleep  = round(mean(sleep_consistent), 2),
+    mean_energy = round(mean(feel_energized), 2),
+    .groups     = "drop"
+  ) %>%
+  kable(caption = "Risk Group Summary Statistics") %>%
+  print()
+```
+
+#### Interpretation:
+
+The summary statistics show a clear gradient across risk categories, with entertainment addiction increasing from Low (2.18) to High Risk (4.09). Academic performance is highest in the Low Risk group (3.66) and drops in Moderate and High Risk groups, though the difference between the latter two is minimal. Sleep consistency remains relatively similar across groups, while energy levels are highest in Low Risk and lower in higher risk categories. This suggests that higher addiction is associated with reduced academic performance and slightly poorer energy levels. Overall, Low Risk individuals exhibit the most favorable outcomes.
+
+### Summary
+This study analyzes digital entertainment consumption and its impact on academic engagement and lifestyle balance among university students using a multivariate approach. Results show a high prevalence of risky consumption behaviors, with significant differences in academic performance across risk groups (ANOVA, p < 0.01). Correlation and regression analyses indicate a negative relationship between entertainment addiction and academic performance, while wellbeing emerges as a strong positive predictor (p < 0.001). The full model explains 20.3% of the variance, suggesting moderate explanatory power. Principal Component Analysis (PCA) captures over 54% of variance within the first four components, supporting dimensionality reduction. K-means clustering identifies distinct behavioral segments, ranging from low-risk high-performing to high-risk low-wellbeing groups. Overall, the findings highlight that behavioral intensity and wellbeing, rather than screen time alone, significantly influence academic outcomes.
+
+
+
+```{r}
+
+# Save final enriched dataset
+write.csv(df, "final_enriched_entertainment_survey.csv", row.names = FALSE)
+cat("\n💾 Final enriched dataset saved as 'final_enriched_entertainment_survey.csv'\n")
+
+cat("\n
+╔══════════════════════════════════════════════════════════════════════════╗
+║                      ANALYSIS COMPLETE ✅                               ║
+║  Files saved:                                                            ║
+║  • cleaned_entertainment_survey.csv      (after Chapter 2)              ║
+║  • final_enriched_entertainment_survey.csv (after all chapters)         ║
+║  15 plots produced — save each using:                                    ║
+║    ggsave('plot_name.png', last_plot(), dpi=300, width=9, height=6)      ║
+╚══════════════════════════════════════════════════════════════════════════╝
+")
+```
